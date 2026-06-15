@@ -1,0 +1,1287 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#005a9c">
+    <meta name="description" content="Sistema de Inventario Móvil SEDAPAL 2026">
+    <title>Inventario Móvil SEDAPAL v2</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%23005a9c' width='192' height='192'/><text x='50%' y='50%' font-size='120' fill='white' text-anchor='middle' dy='.3em'>📱</text></svg>">
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --azul-principal: #005a9c;
+            --azul-oscuro: #003d7a;
+            --gris-claro: #f5f5f5;
+            --gris-medio: #e0e0e0;
+            --gris-oscuro: #333;
+            --blanco: #fff;
+            --rojo: #d32f2f;
+            --verde: #388e3c;
+            --naranja: #ff9800;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--gris-claro);
+            color: var(--gris-oscuro);
+            line-height: 1.6;
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--azul-principal) 0%, var(--azul-oscuro) 100%);
+            color: var(--blanco);
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        header h1 {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+
+        header p {
+            font-size: 13px;
+            opacity: 0.9;
+        }
+
+        .status-bar {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+            font-size: 12px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            background: rgba(255,255,255,0.2);
+            padding: 5px 10px;
+            border-radius: 4px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .status-online .status-dot {
+            background: #4caf50;
+        }
+
+        .status-offline .status-dot {
+            background: #ff9800;
+        }
+
+        .status-sync .status-dot {
+            background: #2196f3;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 20px auto;
+            padding: 0 15px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid var(--gris-medio);
+            overflow-x: auto;
+        }
+
+        .tab-button {
+            padding: 12px 15px;
+            border: none;
+            background: transparent;
+            color: var(--gris-oscuro);
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+            white-space: nowrap;
+        }
+
+        .tab-button.active {
+            color: var(--azul-principal);
+            border-bottom-color: var(--azul-principal);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--gris-oscuro);
+            font-size: 14px;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--gris-medio);
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: border-color 0.3s;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--azul-principal);
+            box-shadow: 0 0 0 3px rgba(0,90,156,0.1);
+        }
+
+        input:disabled, select:disabled {
+            background-color: var(--gris-claro);
+            color: var(--gris-medio);
+            cursor: not-allowed;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        .autocomplete-container {
+            position: relative;
+        }
+
+        .autocomplete-list {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: var(--blanco);
+            border: 1px solid var(--gris-medio);
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        }
+
+        .autocomplete-list.active {
+            display: block;
+        }
+
+        .autocomplete-item {
+            padding: 12px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--gris-claro);
+            transition: background-color 0.2s;
+        }
+
+        .autocomplete-item:hover {
+            background-color: var(--gris-claro);
+        }
+
+        .autocomplete-item.selected {
+            background-color: var(--azul-principal);
+            color: var(--blanco);
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .file-input-wrapper input[type=file] {
+            position: absolute;
+            left: -9999px;
+        }
+
+        .file-input-label {
+            display: block;
+            padding: 12px;
+            background: var(--gris-claro);
+            border: 2px dashed var(--gris-medio);
+            border-radius: 4px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .file-input-label:hover {
+            background: var(--gris-medio);
+            border-color: var(--azul-principal);
+        }
+
+        .file-preview {
+            margin-top: 10px;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+        }
+
+        .preview-item {
+            position: relative;
+            border-radius: 4px;
+            overflow: hidden;
+            background: var(--gris-claro);
+            border: 2px solid var(--gris-medio);
+        }
+
+        .preview-item img {
+            width: 100%;
+            display: block;
+            max-height: 400px;
+            object-fit: contain;
+        }
+
+        .preview-info {
+            padding: 10px;
+            background: var(--blanco);
+            font-size: 12px;
+        }
+
+        .preview-label {
+            font-weight: 600;
+            color: var(--azul-principal);
+        }
+
+        .preview-value {
+            color: var(--gris-oscuro);
+            word-break: break-word;
+        }
+
+        .preview-remove {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: var(--rojo);
+            color: var(--blanco);
+            border: none;
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        .ocr-processing {
+            display: none;
+            padding: 15px;
+            background: var(--naranja);
+            color: var(--blanco);
+            border-radius: 4px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .ocr-processing.active {
+            display: block;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px;
+            background: var(--gris-claro);
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+            margin: 0;
+            cursor: pointer;
+        }
+
+        .checkbox-group label {
+            margin: 0;
+            cursor: pointer;
+            font-weight: normal;
+        }
+
+        .alert {
+            padding: 12px 16px;
+            border-radius: 4px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }
+
+        .alert-success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border-left: 4px solid #4caf50;
+        }
+
+        .alert-error {
+            background: #ffebee;
+            color: #c62828;
+            border-left: 4px solid #f44336;
+        }
+
+        .alert-warning {
+            background: #fff3e0;
+            color: #e65100;
+            border-left: 4px solid #ff9800;
+        }
+
+        .alert-info {
+            background: #e3f2fd;
+            color: #1565c0;
+            border-left: 4px solid #2196f3;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: var(--azul-principal);
+            color: var(--blanco);
+        }
+
+        .btn-primary:hover {
+            background: var(--azul-oscuro);
+        }
+
+        .btn-primary:disabled {
+            background: var(--gris-medio);
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: var(--gris-medio);
+            color: var(--gris-oscuro);
+        }
+
+        .btn-secondary:hover {
+            background: var(--gris-oscuro);
+            color: var(--blanco);
+        }
+
+        .btn-danger {
+            background: var(--rojo);
+            color: var(--blanco);
+        }
+
+        .btn-danger:hover {
+            background: #b71c1c;
+        }
+
+        .card {
+            background: var(--blanco);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .form-row .form-group {
+            margin-bottom: 0;
+        }
+
+        @media (max-width: 600px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .required::after {
+            content: " *";
+            color: var(--rojo);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: var(--blanco);
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--gris-medio);
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>📱 Inventario Móvil SEDAPAL</h1>
+        <p>Saneamiento 2026 - v2.0</p>
+        <div class="status-bar">
+            <div class="status-item status-online">
+                <span class="status-dot"></span>
+                <span id="status-online">Online</span>
+            </div>
+            <div class="status-item status-offline hidden" id="status-offline-item">
+                <span class="status-dot"></span>
+                <span>Offline</span>
+            </div>
+            <div class="status-item status-sync hidden" id="status-sync-item">
+                <span class="status-dot"></span>
+                <span>Sincronizando...</span>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab-button active" onclick="switchTab('registro')">
+                Nuevo Registro
+            </button>
+            <button class="tab-button" onclick="switchTab('pendientes')">
+                Pendientes (<span id="count-pendientes">0</span>)
+            </button>
+            <button class="tab-button" onclick="switchTab('configuracion')">
+                ⚙️ Config
+            </button>
+        </div>
+
+        <!-- TAB: NUEVO REGISTRO -->
+        <div id="registro" class="tab-content active">
+            <div id="alert-container"></div>
+
+            <form id="formulario" onsubmit="guardarEquipo(event)">
+                <!-- Sección 1: Información del Técnico -->
+                <h3 style="font-size: 16px; margin: 20px 0 15px; color: var(--azul-principal); border-bottom: 2px solid var(--gris-medio); padding-bottom: 10px;">
+                    Información del Técnico
+                </h3>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="tecnico" class="required">Técnico Responsable</label>
+                        <select id="tecnico" required>
+                            <option value="">-- Selecciona tu nombre --</option>
+                            <option value="Delgado Lazaro, Edgar">Delgado Lazaro, Edgar</option>
+                            <option value="Durand Llacua, Hector">Durand Llacua, Hector</option>
+                            <option value="Flores Miranda, Cesar">Flores Miranda, Cesar</option>
+                            <option value="Lima Meléndez, Grosman">Lima Meléndez, Grosman</option>
+                            <option value="Mendoza Maguiña, Billy">Mendoza Maguiña, Billy</option>
+                            <option value="Mendoza Pacheco, Gerardo">Mendoza Pacheco, Gerardo</option>
+                            <option value="Mesias Medina, Fernando">Mesias Medina, Fernando</option>
+                            <option value="Quispe Baes, Roller">Quispe Baes, Roller</option>
+                            <option value="Sanchez Cruz, Cesar">Sanchez Cruz, Cesar</option>
+                            <option value="Shuna-Palomino, Mario">Shuna-Palomino, Mario</option>
+                            <option value="Torpoco Mayco, Jose">Torpoco Mayco, Jose</option>
+                            <option value="Trujillo Pulido, Miguel">Trujillo Pulido, Miguel</option>
+                            <option value="Valencia Alvarado, Alvaro">Valencia Alvarado, Alvaro</option>
+                            <option value="Vargas Lara, Jeremy">Vargas Lara, Jeremy</option>
+                            <option value="Velásquez Lacruz, Cristian">Velásquez Lacruz, Cristian</option>
+                            <option value="Técnico 16">Técnico 16</option>
+                            <option value="Técnico 17">Técnico 17</option>
+                            <option value="Técnico 18">Técnico 18</option>
+                            <option value="Técnico 19">Técnico 19</option>
+                            <option value="Técnico 20">Técnico 20</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="ficha" class="required">Ficha de Trabajador</label>
+                        <div class="autocomplete-container">
+                            <input type="text" id="ficha" placeholder="Ingresa ficha (búsqueda automática)" required autocomplete="off">
+                            <div class="autocomplete-list" id="autocomplete-list"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sección 2: Información del Usuario (Auto-rellenada) -->
+                <h3 style="font-size: 16px; margin: 20px 0 15px; color: var(--azul-principal); border-bottom: 2px solid var(--gris-medio); padding-bottom: 10px;">
+                    Información del Usuario (Auto-completado)
+                </h3>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="usuario">Nombre del Usuario</label>
+                        <input type="text" id="usuario" disabled>
+                    </div>
+                    <div class="form-group">
+                        <label for="sede">Sede</label>
+                        <input type="text" id="sede" disabled>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="gerencia">Gerencia/Área</label>
+                    <input type="text" id="gerencia" disabled>
+                </div>
+
+                <div class="form-group">
+                    <label for="equipo">Equipo</label>
+                    <input type="text" id="equipo" disabled>
+                </div>
+
+                <!-- Sección 3: Información del Equipo -->
+                <h3 style="font-size: 16px; margin: 20px 0 15px; color: var(--azul-principal); border-bottom: 2px solid var(--gris-medio); padding-bottom: 10px;">
+                    Información del Equipo
+                </h3>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="imei" class="required">IMEI Manual (15 dígitos)</label>
+                        <input type="text" id="imei" placeholder="Ej: 351234567890123" pattern="[0-9]{15}" title="Debe ser exactamente 15 dígitos" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="telefono" class="required">Número de Teléfono</label>
+                        <input type="tel" id="telefono" placeholder="Ej: 987654321" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="marca" class="required">Marca</label>
+                        <select id="marca" required>
+                            <option value="">-- Selecciona --</option>
+                            <option value="Samsung">Samsung</option>
+                            <option value="Motorola">Motorola</option>
+                            <option value="iPhone">iPhone (Apple)</option>
+                            <option value="Huawei">Huawei</option>
+                            <option value="Otra">Otra</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="modelo" class="required">Modelo</label>
+                        <input type="text" id="modelo" placeholder="Ej: Galaxy A54, G84, 14 Pro" required>
+                    </div>
+                </div>
+
+                <!-- Sección 4: Estado -->
+                <h3 style="font-size: 16px; margin: 20px 0 15px; color: var(--azul-principal); border-bottom: 2px solid var(--gris-medio); padding-bottom: 10px;">
+                    Estado del Equipo
+                </h3>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="estado-etiqueta" class="required">Estado del Etiquetado</label>
+                        <select id="estado-etiqueta" required>
+                            <option value="">-- Selecciona --</option>
+                            <option value="Exitoso">✅ Exitoso (pegada, visible, IMEI validado)</option>
+                            <option value="Pendiente">⏳ Pendiente (equipo no encontrado)</option>
+                            <option value="Equipo Obsoleto">⚠️ Equipo Obsoleto/No Etiquetar</option>
+                            <option value="Equipo Dañado">🔴 Equipo Dañado</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="estado-fisico" class="required">Estado Físico</label>
+                        <select id="estado-fisico" required>
+                            <option value="">-- Selecciona --</option>
+                            <option value="Bueno">✅ Bueno (sin daños visibles)</option>
+                            <option value="Rayado">⚠️ Rayado (pequeños rayones)</option>
+                            <option value="Dañado">🔴 Dañado (pantalla rota)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Sección 5: Fotos y OCR -->
+                <h3 style="font-size: 16px; margin: 20px 0 15px; color: var(--azul-principal); border-bottom: 2px solid var(--gris-medio); padding-bottom: 10px;">
+                    Fotos y Validación IMEI
+                </h3>
+
+                <div class="ocr-processing" id="ocr-processing">
+                    <div class="loading-spinner"></div> Analizando foto...
+                </div>
+
+                <div class="form-group">
+                    <label class="required">Foto del Equipo (IMEI visible)</label>
+                    <p style="font-size: 12px; color: var(--gris-medio); margin-bottom: 10px;">
+                        📷 La foto DEBE mostrar la palabra "IMEI" dos veces (como en el ejemplo de referencia)
+                    </p>
+                    <div class="file-input-wrapper">
+                        <input type="file" id="foto" accept="image/*">
+                        <label for="foto" class="file-input-label">
+                            📸 Tap para tomar/seleccionar foto
+                        </label>
+                    </div>
+                    <div class="file-preview" id="preview-foto"></div>
+                </div>
+
+                <!-- Validación OCR -->
+                <div class="form-group" id="ocr-result" style="display: none;">
+                    <div style="padding: 12px; background: var(--gris-claro); border-radius: 4px; margin-bottom: 15px;">
+                        <div style="margin-bottom: 10px;">
+                            <strong>Análisis OCR:</strong>
+                            <div id="ocr-details" style="margin-top: 5px; font-size: 13px;"></div>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="validar-foto" required>
+                            <label for="validar-foto">✓ Foto contiene IMEI visible 2+ veces</label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Opción: Contactar Analista -->
+                <div id="contactar-analista" style="display: none;">
+                    <div class="alert alert-warning">
+                        ⚠️ No se pudo validar la foto automáticamente. Puedes proceder con registro manual.
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="registro-manual" required>
+                        <label for="registro-manual">Proceder con registro manual (contactar analista después)</label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="observaciones">Observaciones Adicionales</label>
+                    <textarea id="observaciones" placeholder="Si hay algo especial, escríbelo aquí..."></textarea>
+                </div>
+
+                <!-- Campos ocultos -->
+                <input type="hidden" id="imei-auto-1">
+                <input type="hidden" id="imei-auto-2">
+
+                <!-- Botones -->
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button type="submit" class="btn-primary">
+                        ✅ Guardar Equipo
+                    </button>
+                    <button type="reset" class="btn-secondary">
+                        🔄 Limpiar
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- TAB: PENDIENTES -->
+        <div id="pendientes" class="tab-content">
+            <div id="list-pendientes"></div>
+        </div>
+
+        <!-- TAB: CONFIGURACIÓN -->
+        <div id="configuracion" class="tab-content">
+            <div class="card">
+                <h3 style="color: var(--azul-principal); margin-bottom: 15px;">Configuración de Sincronización</h3>
+                <label class="required">URL de Google Apps Script</label>
+                <input type="text" id="script-url" placeholder="https://script.google.com/macros/d/..." style="margin-bottom: 10px;">
+                <button class="btn-primary" onclick="guardarScriptUrl()">
+                    💾 Guardar URL
+                </button>
+            </div>
+
+            <div class="card">
+                <h3 style="color: var(--azul-principal); margin-bottom: 15px;">Sincronización Manual</h3>
+                <button class="btn-primary" onclick="sincronizarAhora()">
+                    ☁️ Sincronizar Ahora
+                </button>
+            </div>
+
+            <div class="card">
+                <h3 style="color: var(--azul-principal); margin-bottom: 15px;">Estadísticas</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 28px; font-weight: bold; color: var(--azul-principal);" id="stat-pendientes">0</div>
+                        <div style="font-size: 12px; color: var(--gris-medio); text-transform: uppercase;">Pendientes</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 28px; font-weight: bold; color: var(--verde);" id="stat-sincronizados">0</div>
+                        <div style="font-size: 12px; color: var(--gris-medio); text-transform: uppercase;">Sincronizados</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3 style="color: var(--azul-principal); margin-bottom: 15px;">Estado de Datos Maestros</h3>
+                <div id="maestro-status" style="padding: 12px; background: var(--gris-claro); border-radius: 4px;">
+                    <p id="maestro-info">Cargando maestro...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ═══════════════════════════════════════════════════════════
+        // VARIABLES GLOBALES
+        // ═══════════════════════════════════════════════════════════
+
+        const DB_NAME = 'InventarioSEDAPAL';
+        const STORE_NAME = 'equipos';
+        let db;
+        let maestroData = [];
+        let fotoData = null;
+        let fotoMetadata = { imei1: '', imei2: '', hasImeiText: false };
+
+        // ═══════════════════════════════════════════════════════════
+        // INICIALIZACIÓN
+        // ═══════════════════════════════════════════════════════════
+
+        async function init() {
+            try {
+                // Service Worker
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.register('sw.js').catch(err => {
+                        console.log('Service Worker: No critical');
+                    });
+                }
+
+                // IndexedDB
+                await initDB();
+
+                // Cargar maestro
+                await cargarMaestro();
+
+                // Configuración
+                cargarConfiguracion();
+
+                // Estadísticas
+                actualizarEstadisticas();
+
+                // Estado inicial
+                if (!navigator.onLine) {
+                    mostrarEstatus('offline');
+                }
+
+            } catch (error) {
+                console.error('Error init:', error);
+                mostrarAlerta('Error al inicializar', 'error');
+            }
+        }
+
+        function initDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, 1);
+
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => {
+                    db = request.result;
+                    resolve(db);
+                };
+
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) {
+                        const store = db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+                        store.createIndex('timestamp', 'timestamp', { unique: false });
+                        store.createIndex('sincronizado', 'sincronizado', { unique: false });
+                    }
+                };
+            });
+        }
+
+        async function cargarMaestro() {
+            try {
+                const response = await fetch('maestro_data.json');
+                maestroData = await response.json();
+                document.getElementById('maestro-info').innerHTML = `✅ Maestro cargado: ${maestroData.length} técnicos`;
+            } catch (error) {
+                console.error('Error cargando maestro:', error);
+                maestroData = [];
+                document.getElementById('maestro-info').innerHTML = `⚠️ Error al cargar maestro. Búsqueda deshabilitada.`;
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // SISTEMA DE AUTOCOMPLETE (FICHA)
+        // ═══════════════════════════════════════════════════════════
+
+        const fichaInput = document.getElementById('ficha');
+        const autocompleteList = document.getElementById('autocomplete-list');
+
+        fichaInput.addEventListener('input', (e) => {
+            const valor = e.target.value.trim();
+
+            if (valor.length < 1) {
+                autocompleteList.classList.remove('active');
+                limpiarAutocompletedFields();
+                return;
+            }
+
+            // Buscar en maestro
+            const resultados = maestroData.filter(item =>
+                item.ficha.includes(valor)
+            ).slice(0, 10);
+
+            if (resultados.length === 0) {
+                autocompleteList.classList.remove('active');
+                limpiarAutocompletedFields();
+                return;
+            }
+
+            // Mostrar resultados
+            autocompleteList.innerHTML = resultados.map((item, idx) => `
+                <div class="autocomplete-item" onclick="seleccionarFicha('${item.ficha}', '${item.usuario.replace(/'/g, "\\'")}', '${item.sede.replace(/'/g, "\\'")}', '${item.gerencia.replace(/'/g, "\\'")}', '${item.equipo.replace(/'/g, "\\'")}')" style="cursor: pointer;">
+                    <div style="font-weight: 600; color: var(--azul-principal);">${item.ficha}</div>
+                    <div style="font-size: 12px; color: var(--gris-oscuro);">${item.usuario}</div>
+                </div>
+            `).join('');
+
+            autocompleteList.classList.add('active');
+        });
+
+        function seleccionarFicha(ficha, usuario, sede, gerencia, equipo) {
+            fichaInput.value = ficha;
+            document.getElementById('usuario').value = usuario;
+            document.getElementById('sede').value = sede;
+            document.getElementById('gerencia').value = gerencia;
+            document.getElementById('equipo').value = equipo;
+            autocompleteList.classList.remove('active');
+        }
+
+        function limpiarAutocompletedFields() {
+            document.getElementById('usuario').value = '';
+            document.getElementById('sede').value = '';
+            document.getElementById('gerencia').value = '';
+            document.getElementById('equipo').value = '';
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // GESTIÓN DE FOTOS CON OCR
+        // ═══════════════════════════════════════════════════════════
+
+        document.getElementById('foto').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // Validar tipo
+            if (!file.type.startsWith('image/')) {
+                mostrarAlerta('Solo se aceptan imágenes', 'error');
+                return;
+            }
+
+            // Mostrar preview
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                fotoData = event.target.result;
+                mostrarPreviewFoto(event.target.result);
+
+                // Procesar OCR
+                procesarOCR(event.target.result);
+            };
+            reader.readAsDataURL(file);
+        });
+
+        function mostrarPreviewFoto(dataUrl) {
+            const preview = document.getElementById('preview-foto');
+            preview.innerHTML = `
+                <div class="preview-item">
+                    <img src="${dataUrl}" alt="Foto IMEI">
+                    <button type="button" class="preview-remove" onclick="removerFoto()">×</button>
+                </div>
+            `;
+        }
+
+        function removerFoto() {
+            document.getElementById('foto').value = '';
+            document.getElementById('preview-foto').innerHTML = '';
+            document.getElementById('ocr-result').style.display = 'none';
+            document.getElementById('contactar-analista').style.display = 'none';
+            document.getElementById('validar-foto').checked = false;
+            document.getElementById('registro-manual').checked = false;
+            fotoData = null;
+            fotoMetadata = { imei1: '', imei2: '', hasImeiText: false };
+        }
+
+        async function procesarOCR(dataUrl) {
+            const processingDiv = document.getElementById('ocr-processing');
+            processingDiv.classList.add('active');
+
+            try {
+                // OCR con Tesseract.js
+                const { data: { text } } = await Tesseract.recognize(
+                    dataUrl,
+                    'spa'
+                );
+
+                // Buscar "IMEI" en el texto
+                const hasImei = text.toUpperCase().includes('IMEI');
+                const imeiCount = (text.match(/IMEI/gi) || []).length;
+
+                // Extraer números (códigos de barras potenciales)
+                const numeros = text.match(/\d{10,}/g) || [];
+
+                fotoMetadata = {
+                    imei1: numeros[0] || '',
+                    imei2: numeros[1] || '',
+                    hasImeiText: hasImei && imeiCount >= 2,
+                    imeiCount: imeiCount
+                };
+
+                // Mostrar resultado
+                mostrarResultadoOCR(hasImei, imeiCount, numeros);
+
+            } catch (error) {
+                console.error('Error OCR:', error);
+                mostrarResultadoOCRFalla();
+            } finally {
+                processingDiv.classList.remove('active');
+            }
+        }
+
+        function mostrarResultadoOCR(hasImei, imeiCount, numeros) {
+            const resultDiv = document.getElementById('ocr-result');
+            const detallesDiv = document.getElementById('ocr-details');
+            const contactarDiv = document.getElementById('contactar-analista');
+
+            if (hasImei && imeiCount >= 2) {
+                // Validación exitosa
+                detallesDiv.innerHTML = `
+                    ✅ Foto válida
+                    <br>Texto "IMEI" detectado: ${imeiCount} veces
+                    ${numeros.length > 0 ? `<br>Códigos detectados: ${numeros.slice(0, 2).join(', ')}` : ''}
+                `;
+                resultDiv.style.display = 'block';
+                contactarDiv.style.display = 'none';
+                document.getElementById('validar-foto').required = false;
+                document.getElementById('registro-manual').required = false;
+            } else {
+                // Validación manual requerida
+                detallesDiv.innerHTML = `
+                    ⚠️ No se pudo validar automáticamente
+                    <br>Texto "IMEI" detectado: ${imeiCount} veces (se necesitan 2+)
+                `;
+                resultDiv.style.display = 'block';
+                contactarDiv.style.display = 'block';
+                document.getElementById('validar-foto').required = true;
+                document.getElementById('registro-manual').required = true;
+            }
+
+            // Guardar IMEI automáticos
+            document.getElementById('imei-auto-1').value = fotoMetadata.imei1;
+            document.getElementById('imei-auto-2').value = fotoMetadata.imei2;
+        }
+
+        function mostrarResultadoOCRFalla() {
+            const resultDiv = document.getElementById('ocr-result');
+            const detallesDiv = document.getElementById('ocr-details');
+            const contactarDiv = document.getElementById('contactar-analista');
+
+            detallesDiv.innerHTML = `
+                ❌ No se pudo procesar la foto
+            `;
+            resultDiv.style.display = 'block';
+            contactarDiv.style.display = 'block';
+            document.getElementById('validar-foto').required = true;
+            document.getElementById('registro-manual').required = true;
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // GUARDAR EQUIPO
+        // ═══════════════════════════════════════════════════════════
+
+        async function guardarEquipo(event) {
+            event.preventDefault();
+
+            // Validar foto
+            if (!fotoData) {
+                mostrarAlerta('❌ Falta imagen - Debes tomar una foto', 'error');
+                return;
+            }
+
+            // Validar IMEI manual
+            const imei = document.getElementById('imei').value.trim();
+            if (imei.length !== 15) {
+                mostrarAlerta('IMEI debe ser exactamente 15 dígitos', 'error');
+                return;
+            }
+
+            // Crear objeto equipo
+            const equipo = {
+                timestamp: new Date().toISOString(),
+                tecnico: document.getElementById('tecnico').value,
+                ficha: document.getElementById('ficha').value,
+                usuario: document.getElementById('usuario').value,
+                sede: document.getElementById('sede').value,
+                gerencia: document.getElementById('gerencia').value,
+                equipo: document.getElementById('equipo').value,
+                imei: imei,
+                imeiAuto1: document.getElementById('imei-auto-1').value,
+                imeiAuto2: document.getElementById('imei-auto-2').value,
+                telefono: document.getElementById('telefono').value,
+                marca: document.getElementById('marca').value,
+                modelo: document.getElementById('modelo').value,
+                estadoEtiqueta: document.getElementById('estado-etiqueta').value,
+                estadoFisico: document.getElementById('estado-fisico').value,
+                observaciones: document.getElementById('observaciones').value,
+                foto: fotoData,
+                sincronizado: false
+            };
+
+            // Guardar en IndexedDB
+            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.add(equipo);
+
+            request.onsuccess = () => {
+                mostrarAlerta('✅ Equipo guardado correctamente', 'success');
+                document.getElementById('formulario').reset();
+                document.getElementById('preview-foto').innerHTML = '';
+                document.getElementById('ocr-result').style.display = 'none';
+                document.getElementById('contactar-analista').style.display = 'none';
+                fotoData = null;
+                actualizarEstadisticas();
+
+                if (navigator.onLine) {
+                    setTimeout(() => sincronizarAutomatico(), 1000);
+                }
+            };
+
+            request.onerror = () => {
+                mostrarAlerta('❌ Error al guardar', 'error');
+            };
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // UTILIDADES
+        // ═══════════════════════════════════════════════════════════
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(el => {
+                el.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-button').forEach(el => {
+                el.classList.remove('active');
+            });
+
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+
+            if (tabName === 'pendientes') {
+                cargarPendientes();
+            }
+
+            actualizarEstadisticas();
+        }
+
+        function mostrarAlerta(mensaje, tipo = 'info') {
+            const container = document.getElementById('alert-container');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${tipo}`;
+            alert.textContent = mensaje;
+            container.innerHTML = '';
+            container.appendChild(alert);
+
+            setTimeout(() => alert.remove(), 4000);
+        }
+
+        function mostrarEstatus(estado) {
+            const onlineItem = document.getElementById('status-online').parentElement;
+            const offlineItem = document.getElementById('status-offline-item');
+            const syncItem = document.getElementById('status-sync-item');
+
+            onlineItem.classList.remove('status-online');
+            offlineItem.classList.add('hidden');
+            syncItem.classList.add('hidden');
+
+            if (estado === 'online') {
+                onlineItem.classList.add('status-online');
+            } else if (estado === 'offline') {
+                offlineItem.classList.remove('hidden');
+            } else if (estado === 'sincronizando') {
+                syncItem.classList.remove('hidden');
+            }
+        }
+
+        async function actualizarEstadisticas() {
+            const transaction = db.transaction([STORE_NAME], 'readonly');
+            const store = transaction.objectStore(STORE_NAME);
+            const index = store.index('sincronizado');
+
+            const requestPendientes = index.getAll(false);
+            requestPendientes.onsuccess = () => {
+                const count = requestPendientes.result.length;
+                document.getElementById('stat-pendientes').textContent = count;
+                document.getElementById('count-pendientes').textContent = count;
+            };
+
+            const requestSincronizados = index.getAll(true);
+            requestSincronizados.onsuccess = () => {
+                document.getElementById('stat-sincronizados').textContent = requestSincronizados.result.length;
+            };
+        }
+
+        async function cargarPendientes() {
+            const transaction = db.transaction([STORE_NAME], 'readonly');
+            const store = transaction.objectStore(STORE_NAME);
+            const index = store.index('sincronizado');
+            const request = index.getAll(false);
+
+            request.onsuccess = () => {
+                const equipos = request.result;
+                if (equipos.length === 0) {
+                    document.getElementById('list-pendientes').innerHTML = '<div class="empty-state"><div class="empty-state-icon">✅</div><p>No hay registros pendientes</p></div>';
+                    return;
+                }
+
+                document.getElementById('list-pendientes').innerHTML = equipos.map(eq => `
+                    <div class="card">
+                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+                            <div>
+                                <strong style="color: var(--azul-principal);">IMEI: ${eq.imei}</strong>
+                                <div style="font-size: 12px; color: var(--gris-medio);">${eq.usuario}</div>
+                            </div>
+                            <span style="background: #ff9800; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px;">⏳ Pendiente</span>
+                        </div>
+                        <button class="btn-danger" onclick="eliminarEquipo(${eq.id})" style="font-size: 13px;">Eliminar</button>
+                    </div>
+                `).join('');
+            };
+        }
+
+        async function eliminarEquipo(id) {
+            if (!confirm('¿Eliminar este equipo?')) return;
+
+            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            store.delete(id);
+
+            mostrarAlerta('Equipo eliminado', 'success');
+            cargarPendientes();
+            actualizarEstadisticas();
+        }
+
+        function cargarConfiguracion() {
+            const url = localStorage.getItem('scriptUrl');
+            if (url) {
+                document.getElementById('script-url').value = url;
+            }
+        }
+
+        function guardarScriptUrl() {
+            const url = document.getElementById('script-url').value.trim();
+            if (!url) {
+                mostrarAlerta('Ingresa una URL válida', 'error');
+                return;
+            }
+            localStorage.setItem('scriptUrl', url);
+            mostrarAlerta('URL guardada correctamente', 'success');
+        }
+
+        async function sincronizarAhora() {
+            if (!navigator.onLine) {
+                mostrarAlerta('No hay conexión a internet', 'warning');
+                return;
+            }
+
+            mostrarEstatus('sincronizando');
+
+            const transaction = db.transaction([STORE_NAME], 'readonly');
+            const store = transaction.objectStore(STORE_NAME);
+            const index = store.index('sincronizado');
+            const request = index.getAll(false);
+
+            request.onsuccess = async () => {
+                const equipos = request.result;
+                if (equipos.length === 0) {
+                    mostrarAlerta('No hay registros pendientes', 'info');
+                    mostrarEstatus('online');
+                    return;
+                }
+
+                const scriptUrl = localStorage.getItem('scriptUrl');
+                if (!scriptUrl) {
+                    mostrarAlerta('Configura la URL del script primero', 'error');
+                    mostrarEstatus('online');
+                    return;
+                }
+
+                try {
+                    for (const equipo of equipos) {
+                        await fetch(scriptUrl, {
+                            method: 'POST',
+                            mode: 'no-cors',
+                            body: JSON.stringify(equipo)
+                        });
+
+                        // Marcar como sincronizado
+                        const txn = db.transaction([STORE_NAME], 'readwrite');
+                        const str = txn.objectStore(STORE_NAME);
+                        str.put({ ...equipo, sincronizado: true });
+                    }
+
+                    mostrarAlerta('✅ Sincronización completada', 'success');
+                    actualizarEstadisticas();
+                } catch (error) {
+                    mostrarAlerta('❌ Error en sincronización', 'error');
+                } finally {
+                    mostrarEstatus('online');
+                }
+            };
+        }
+
+        async function sincronizarAutomatico() {
+            if (!navigator.onLine) return;
+
+            const transaction = db.transaction([STORE_NAME], 'readonly');
+            const store = transaction.objectStore(STORE_NAME);
+            const index = store.index('sincronizado');
+            const request = index.getAll(false);
+
+            request.onsuccess = () => {
+                const equipos = request.result;
+                if (equipos.length > 0) {
+                    sincronizarAhora();
+                }
+            };
+        }
+
+        window.addEventListener('online', () => {
+            mostrarEstatus('online');
+            mostrarAlerta('📡 Conexión restablecida', 'success');
+            sincronizarAutomatico();
+        });
+
+        window.addEventListener('offline', () => {
+            mostrarEstatus('offline');
+            mostrarAlerta('⚠️ Sin conexión (Modo offline)', 'warning');
+        });
+
+        // Iniciar
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
